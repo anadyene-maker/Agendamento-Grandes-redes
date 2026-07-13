@@ -9,7 +9,7 @@ from datetime import datetime
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
 st.title("🚚 Controle de Agendamentos (Banco de Dados Ativo)")
-st.markdown("Plataforma compartilhável com histórico permanete salvo no GitHub.")
+st.markdown("Plataforma compartilhável com histórico permanente salvo no GitHub.")
 
 # Configurações do Repositório via Secrets
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
@@ -37,16 +37,23 @@ def salvar_dados_github(df_salvar, sha=None):
     response = requests.put(URL, headers=headers, json=data)
     return response.status_code in [200, 201]
 
-# Função para buscar os dados existentes no GitHub com tratamento de erro integrado
+# Função para buscar os dados existentes no GitHub com tratamento robusto para arquivos vazios
 def carregar_dados_github():
     response = requests.get(URL, headers=headers)
     if response.status_code == 200:
         content = response.json()
         csv_data = base64.b64decode(content['content']).decode('utf-8')
-        if csv_data.strip() == "":
-            return pd.DataFrame(), None
-        df = pd.read_csv(io.StringIO(csv_data))
-        return df, content['sha']
+        
+        # Se o arquivo estiver completamente vazio ou sem linhas estruturadas
+        if not csv_data.strip():
+            return pd.DataFrame(), content['sha']
+            
+        try:
+            df = pd.read_csv(io.StringIO(csv_data))
+            return df, content['sha']
+        except pd.errors.EmptyDataError:
+            return pd.DataFrame(), content['sha']
+            
     return pd.DataFrame(), None
 
 # Carrega o histórico salvo na nuvem do Git
@@ -58,20 +65,17 @@ uploaded_file = st.file_uploader("Arraste o relatório do sistema aqui para mesc
 
 if uploaded_file:
     # --- LÓGICA INTELIGENTE DE LEITURA DO EXCEL ---
-    # Primeiro lemos o arquivo completo para checar onde está o cabeçalho real
     df_teste = pd.read_excel(uploaded_file, nrows=5)
     
-    # Se a primeira coluna contiver "Emissão:" ou algo do tipo, sabemos que é o arquivo bruto do ERP
     if df_teste.dropna(how='all').iloc[0].astype(str).str.contains('Emissão|Total|Relatório').any():
         df_novo = pd.read_excel(uploaded_file, skiprows=2)
     else:
         df_novo = pd.read_excel(uploaded_file)
     # ----------------------------------------------
     
-    # Remove espaços em branco antes ou depois dos nomes das colunas
     df_novo.columns = df_novo.columns.str.strip()
     
-    # Criar colunas operacionais com segurança se elas não existirem
+    # Criar colunas operacionais com segurança
     if 'Agendado Para' not in df_novo.columns:
         if 'Data Agendamento' in df_novo.columns:
             df_novo['Agendado Para'] = df_novo['Data Agendamento'].fillna("")
@@ -87,15 +91,14 @@ if uploaded_file:
     if 'Tem Antecipação?' not in df_novo.columns:
         df_novo['Tem Antecipação?'] = "Não"
         
-    # Lógica de Antecipação automática baseada nas observações
     if 'Obs. Logística' in df_novo.columns:
         for idx, row in df_novo.iterrows():
             obs = str(row.get('Obs. Logística', '')).lower()
             if 'antecipar' in obs or 'portal indeferiu' in obs or 'indefe' in obs:
                 df_novo.at[idx, 'Tem Antecipação?'] = "⚠️ Solicitar Antecipação"
             
-    # Se já temos um histórico no banco, cruza para trazer dados antigos e adicionar os novos
-    if not df_banco.empty and 'Ordem Carga' in df_novo.columns and 'Nº Nota' in df_novo.columns:
+    # Sincronização e cruzamento inteligente
+    if df_banco is not None and not df_banco.empty and 'Ordem Carga' in df_novo.columns and 'Nº Nota' in df_novo.columns:
         df_banco['chave'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
         df_novo['chave'] = df_novo['Ordem Carga'].astype(str) + "_" + df_novo['Nº Nota'].astype(str)
         
@@ -114,10 +117,9 @@ if uploaded_file:
                 st.error("Erro ao salvar no repositório. Verifique se o Token nas Secrets está correto.")
 
 # Se o banco global não estiver vazio, exibe o painel de controle operacional
-if not df_banco.empty:
+if df_banco is not None and not df_banco.empty:
     st.markdown("---")
     
-    # Identificar a Rede automaticamente
     def identificar_rede(cliente):
         cliente_upper = str(cliente).upper()
         if "MUFFATO" in cliente_upper: return "Muffato"
@@ -130,14 +132,12 @@ if not df_banco.empty:
     else:
         df_banco['Rede'] = "Outros"
     
-    # Filtros na Barra Lateral
     st.sidebar.header("Filtros de Operação")
     redes_disponiveis = df_banco['Rede'].unique().tolist()
     redes_selecionadas = st.sidebar.multiselect("Filtrar por Rede", options=redes_disponiveis, default=redes_disponiveis)
     
     df_filtrado = df_banco[df_banco['Rede'].isin(redes_selecionadas)]
     
-    # KPIs do dia
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total de Cargas em Carteira", len(df_filtrado))
     if 'Tem Antecipação?' in df_filtrado.columns:
@@ -157,7 +157,6 @@ if not df_banco.empty:
     
     df_exibir = df_filtrado[[c for c in colunas_exibicao if c in df_filtrado.columns]]
     
-    # Editor interativo
     edited_df = st.data_editor(
         df_exibir,
         column_config={
@@ -172,7 +171,6 @@ if not df_banco.empty:
         key="editor_global"
     )
     
-    # Botão de salvar alterações da tabela
     if st.button("🚀 Salvar Alterações da Tabela para a Equipe"):
         df_banco.update(edited_df)
         with st.spinner("Sincronizando banco de dados..."):
@@ -183,5 +181,4 @@ if not df_banco.empty:
             else:
                 st.error("Erro de sincronização. Tente atualizar a página.")
 else:
-    if not uploaded_file:
-        st.info("O banco de dados está vazio. Por favor, faça o upload de qualquer planilha de cargas acima para iniciar o histórico.")
+    st.info("O banco de dados está pronto e vazio. Por favor, faça o upload de qualquer planilha de cargas acima para iniciar o histórico compartilhável.")
