@@ -22,16 +22,6 @@ headers = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# Função para buscar os dados existentes no GitHub
-def carregar_dados_github():
-    response = requests.get(URL, headers=headers)
-    if response.status_code == 200:
-        content = response.json()
-        csv_data = base64.b64decode(content['content']).decode('utf-8')
-        df = pd.read_csv(io.StringIO(csv_data))
-        return df, content['sha']
-    return pd.DataFrame(), None
-
 # Função para salvar/atualizar os dados no GitHub
 def salvar_dados_github(df_salvar, sha=None):
     csv_string = df_salvar.to_csv(index=False)
@@ -47,11 +37,24 @@ def salvar_dados_github(df_salvar, sha=None):
     response = requests.put(URL, headers=headers, json=data)
     return response.status_code in [200, 201]
 
+# Função para buscar os dados existentes no GitHub com tratamento de erro integrado
+def carregar_dados_github():
+    response = requests.get(URL, headers=headers)
+    if response.status_code == 200:
+        content = response.json()
+        csv_data = base64.b64decode(content['content']).decode('utf-8')
+        if csv_data.strip() == "":
+            return pd.DataFrame(), None
+        df = pd.read_csv(io.StringIO(csv_data))
+        return df, content['sha']
+    # Se o arquivo não existir (404), retorna estrutura vazia para ser criada no primeiro upload
+    return pd.DataFrame(), None
+
 # Carrega o histórico salvo na nuvem do Git
 df_banco, current_sha = carregar_dados_github()
 
 # Área de Upload de novos relatórios do Sistema
-st.subheader("📥 Alimentar o Sistema (Opcional)")
+st.subheader("📥 Alimentar o Sistema")
 uploaded_file = st.file_uploader("Arraste o relatório diário do sistema aqui para mesclar novos dados", type=["xlsx"])
 
 if uploaded_file:
@@ -60,7 +63,7 @@ if uploaded_file:
     # Remove espaços em branco antes ou depois dos nomes das colunas
     df_novo.columns = df_novo.columns.str.strip()
     
-    # Criar colunas operacionais com segurança (evita o erro KeyError)
+    # Criar colunas operacionais com segurança
     if 'Agendado Para' not in df_novo.columns:
         if 'Data Agendamento' in df_novo.columns:
             df_novo['Agendado Para'] = df_novo['Data Agendamento'].fillna("")
@@ -80,3 +83,90 @@ if uploaded_file:
     for idx, row in df_novo.iterrows():
         obs = str(row.get('Obs. Logística', '')).lower()
         if 'antecipar' in obs or 'portal indeferiu' in obs or 'indefe' in obs:
+            df_novo.at[idx, 'Tem Antecipação?'] = "⚠️ Solicitar Antecipação"
+            
+    # Se já temos um histórico no banco, cruza para trazer dados antigos e adicionar os novos
+    if not df_banco.empty:
+        df_banco['chave'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
+        df_novo['chave'] = df_novo['Ordem Carga'].astype(str) + "_" + df_novo['Nº Nota'].astype(str)
+        
+        novas_linhas = df_novo[~df_novo['chave'].isin(df_banco['chave'])]
+        df_final = pd.concat([df_banco, novas_linhas], ignore_index=True).drop(columns=['chave'], errors='ignore')
+    else:
+        df_final = df_novo
+        
+    if st.button("💾 Gravar Novas Cargas no Sistema Compartilhado"):
+        with st.spinner("Salvando no GitHub..."):
+            sucesso = salvar_dados_github(df_final, current_sha)
+            if sucesso:
+                st.success("Novas cargas integradas e salvas com sucesso!")
+                st.rerun()
+            else:
+                st.error("Erro ao salvar no repositório. Verifique se o Token nas Secrets está correto.")
+
+# Se o banco global não estiver vazio, exibe o painel de controle operacional
+if not df_banco.empty:
+    st.markdown("---")
+    
+    # Identificar a Rede automaticamente
+    def identificar_rede(cliente):
+        cliente_upper = str(cliente).upper()
+        if "MUFFATO" in cliente_upper: return "Muffato"
+        elif "ATACADAO" in cliente_upper or "ATACADÃO" in cliente_upper: return "Atacadão"
+        elif "ASSAI" in cliente_upper or "ASSAÍ" in cliente_upper: return "Assaí"
+        return "Outros"
+        
+    df_banco['Rede'] = df_banco['Cliente'].apply(identificar_rede)
+    
+    # Filtros na Barra Lateral
+    st.sidebar.header("Filtros de Operação")
+    redes_disponiveis = df_banco['Rede'].unique().tolist()
+    redes_selecionadas = st.sidebar.multiselect("Filtrar por Rede", options=redes_disponiveis, default=redes_disponiveis)
+    
+    df_filtrado = df_banco[df_banco['Rede'].isin(redes_selecionadas)]
+    
+    # KPIs do dia
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total de Cargas em Carteira", len(df_filtrado))
+    col2.metric("Antecipações Críticas", len(df_filtrado[df_filtrado['Tem Antecipação?'] == "⚠️ Solicitar Antecipação"]))
+    col3.metric("Confirmados", len(df_filtrado[df_filtrado['Confirmado'] == "Confirmado"]))
+    col4.metric("E-mails Enviados", len(df_filtrado[df_filtrado['E-mail enviado ao OPL'] == True]))
+    
+    st.subheader("📋 Tabela Interativa de Agendamentos")
+    st.caption("As alterações feitas abaixo serão salvas permanentemente em nuvem ao clicar no botão 'Salvar Alterações'.")
+    
+    colunas_exibicao = [
+        'Ordem Carga', 'Cliente', 'Rede', 'Nº Nota', 'Obs. Logística', 
+        'Tem Antecipação?', 'Agendado Para', 'Confirmado', 'E-mail enviado ao OPL'
+    ]
+    
+    df_exibir = df_filtrado[[c for c in colunas_exibicao if c in df_filtrado.columns]]
+    
+    # Editor interativo
+    edited_df = st.data_editor(
+        df_exibir,
+        column_config={
+            "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", default=False),
+            "Confirmado": st.column_config.SelectboxColumn("Status Janela", options=["Pendente", "Aguardando Portal", "Confirmado", "Reagenda"], required=True),
+            "Agendado Para": st.column_config.TextColumn("Agendado Para (Data/Hora)"),
+            "Tem Antecipação?": st.column_config.TextColumn("Status Status Antecipação", disabled=True)
+        },
+        disabled=["Ordem Carga", "Cliente", "Rede", "Nº Nota", "Obs. Logística"],
+        hide_index=True,
+        use_container_width=True,
+        key="editor_global"
+    )
+    
+    # Botão de salvar alterações da tabela
+    if st.button("🚀 Salvar Alterações da Tabela para a Equipe"):
+        df_banco.update(edited_df)
+        with st.spinner("Sincronizando banco de dados..."):
+            sucesso = salvar_dados_github(df_banco, current_sha)
+            if sucesso:
+                st.success("Alterações salvas! Agora todos que abrirem o app verão as mesmas informações.")
+                st.rerun()
+            else:
+                st.error("Erro de sincronização. Tente atualizar a página.")
+else:
+    if not uploaded_file:
+        st.info("O banco de dados está vazio. Por favor, faça o upload da primeira planilha do sistema acima para iniciar o histórico.")
