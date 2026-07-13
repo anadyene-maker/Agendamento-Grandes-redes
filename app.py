@@ -80,7 +80,7 @@ df_banco, current_sha = carregar_dados_github()
 
 # 🔐 CONTROLE DE ACESSO NA BARRA LATERAL
 st.sidebar.markdown("### 🔑 Controle de Acesso")
-modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
+modo_editor = st.sidebar.checkbox("Ativar Modo Editor", value=False)
 
 # 1. Área de Upload de novos relatórios (Só aparece no modo editor)
 if modo_editor:
@@ -188,7 +188,7 @@ if df_banco is not None and not df_banco.empty:
     
     c_titulo, c_botao = st.columns([3, 1])
     with c_titulo:
-        st.subheader("📊 Resumo Executivo (Visão do Gerente)")
+        st.subheader("📊 Resumo Executivo")
     with c_botao:
         st.markdown("""
             <button onclick="window.print()" style="
