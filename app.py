@@ -61,13 +61,11 @@ uploaded_file = st.file_uploader("Arraste aqui a planilha extraída do sistema (
 
 if uploaded_file:
     try:
-        # Leitura inicial bruta para limpar metadados de relatórios do sistema (Emissão, Usuário, etc.)
         if uploaded_file.name.lower().endswith('.csv'):
             df_raw = pd.read_csv(uploaded_file, header=None)
         else:
             df_raw = pd.read_excel(uploaded_file, header=None)
             
-        # Localiza a linha onde realmente começam os dados procurando por "Nº Nota" ou "Ordem Carga"
         linha_cabecalho = 0
         for idx, row in df_raw.iterrows():
             linha_str = row.astype(str).tolist()
@@ -75,7 +73,6 @@ if uploaded_file:
                 linha_cabecalho = idx
                 break
         
-        # Reconstrói o DataFrame pulando a sujeira do topo
         uploaded_file.seek(0)
         if uploaded_file.name.lower().endswith('.csv'):
             df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho)
@@ -84,7 +81,6 @@ if uploaded_file:
             
         df_novo.columns = df_novo.columns.str.strip()
         
-        # Garante a existência das colunas operacionais personalizadas
         colunas_status = {
             'Fase do Agendamento': 'Pendente',
             'Pedido de Antecipação': '',
@@ -95,7 +91,6 @@ if uploaded_file:
             if col not in df_novo.columns:
                 df_novo[col] = default
 
-        # Se houver banco ativo, cruza as tabelas usando apenas o Nº Nota como chave única e segura
         if df_banco is not None and not df_banco.empty and 'Nº Nota' in df_novo.columns:
             df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
             df_novo['Nº Nota'] = df_novo['Nº Nota'].astype(str).str.strip()
@@ -122,7 +117,6 @@ st.subheader("📋 2. Painel de Controle Operacional")
 
 if df_banco is not None and not df_banco.empty:
     
-    # Filtro por cliente na barra lateral
     if 'Cliente' in df_banco.columns:
         clientes_disponiveis = df_banco['Cliente'].dropna().unique().tolist()
         clientes_selecionados = st.sidebar.multiselect("Filtrar por Cliente", options=clientes_disponiveis, default=clientes_disponiveis)
@@ -130,7 +124,6 @@ if df_banco is not None and not df_banco.empty:
     else:
         df_filtrado = df_banco.copy()
         
-    # Tratamento preventivo de formatos para o editor visual não travar
     if 'E-mail enviado ao OPL' in df_filtrado.columns:
         df_filtrado['E-mail enviado ao OPL'] = df_filtrado['E-mail enviado ao OPL'].map({'True': True, 'False': False, True: True, False: False}).fillna(False).astype(bool)
     if 'Antecipado' in df_filtrado.columns:
@@ -141,14 +134,11 @@ if df_banco is not None and not df_banco.empty:
         if col in df_filtrado.columns:
             df_filtrado[col] = df_filtrado[col].fillna("").astype(str)
 
-    # CORREÇÃO CRÍTICA: Limpa e padroniza os textos salvos para bater com as opções exatas da caixinha
     opcoes_permitidas = ["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"]
     if 'Fase do Agendamento' in df_filtrado.columns:
         df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
-        # Se houver qualquer valor fora do padrão antigo na base, força para "Pendente" para não quebrar
         df_filtrado.loc[~df_filtrado['Fase do Agendamento'].isin(opcoes_permitidas), 'Fase do Agendamento'] = "Pendente"
 
-    # Organização das colunas na ordem perfeita de trabalho
     colunas_visiveis = [
         'Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 
         'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota'
@@ -156,7 +146,7 @@ if df_banco is not None and not df_banco.empty:
     
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
-    # Tabela Interativa
+    # Tabela Interativa Sem os sufixos "(Editável)"
     edited_df = st.data_editor(
         df_exibir,
         column_config={
@@ -166,17 +156,17 @@ if df_banco is not None and not df_banco.empty:
                 required=True
             ),
             "Antecipado": st.column_config.CheckboxColumn("Antecipado?"),
-            "Data Agendamento": st.column_config.TextColumn("Data Agendamento (Editável)"),
-            "Obs. Logística": st.column_config.TextColumn("Obs. Logística (Editável)"),
-            "Pedido de Antecipação": st.column_config.TextColumn("Pedido de Antecipação (Data/Status)"),
+            "Data Agendamento": st.column_config.TextColumn("Data Agendamento"),
+            "Obs. Logística": st.column_config.TextColumn("Obs. Logística"),
+            "Pedido de Antecipação": st.column_config.TextColumn("Pedido de Antecipação"),
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?"),
-            "Ordem Carga": st.column_config.TextColumn("Ordem Carga (Editável)"),
+            "Ordem Carga": st.column_config.TextColumn("Ordem Carga"),
             "Nº Nota": st.column_config.TextColumn("Nº Nota"),
             "Cliente": st.column_config.TextColumn("Cliente", disabled=True)
         },
         hide_index=True,
         use_container_width=True,
-        key="editor_fases_v5"
+        key="editor_fases_v6"
     )
     
     if st.button("🚀 Salvar Alterações"):
