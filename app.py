@@ -8,7 +8,7 @@ import io
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
 st.title("🚚 Controle de Agendamentos Logísticos")
-st.markdown("Painel dinâmico com limpeza automática de cabeçalhos do sistema e edição livre.")
+st.markdown("Painel dinâmico com gráficos gerenciais e controle de fases.")
 
 # Configurações do Repositório via Secrets
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
@@ -111,12 +111,10 @@ if uploaded_file:
     except Exception as e:
         st.error(f"Erro ao processar o arquivo enviado: {e}")
 
-# 2. Exibição da Tabela de Controle Operacional
-st.markdown("---")
-st.subheader("📋 2. Painel de Controle Operacional")
-
+# Tratamento dos dados para os Gráficos e Filtros
 if df_banco is not None and not df_banco.empty:
     
+    # Filtro por cliente na barra lateral
     if 'Cliente' in df_banco.columns:
         clientes_disponiveis = df_banco['Cliente'].dropna().unique().tolist()
         clientes_selecionados = st.sidebar.multiselect("Filtrar por Cliente", options=clientes_disponiveis, default=clientes_disponiveis)
@@ -139,6 +137,38 @@ if df_banco is not None and not df_banco.empty:
         df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
         df_filtrado.loc[~df_filtrado['Fase do Agendamento'].isin(opcoes_permitidas), 'Fase do Agendamento'] = "Pendente"
 
+    # 📊 SEÇÃO GRÁFICOS E METRICAS GERENCIAIS
+    st.markdown("---")
+    st.subheader("📊 Resumo Executivo (Visão do Gerente)")
+    
+    # 1. Cards Indicadores
+    m1, m2, m3 = st.columns(3)
+    total_cargas = len(df_filtrado)
+    total_antecipados = df_filtrado['Antecipado'].sum()
+    total_confirmados = (df_filtrado['Fase do Agendamento'] == "Confirmado").sum()
+    
+    m1.metric("📦 Total de Cargas Monitoradas", total_cargas)
+    m2.metric("⚠️ Antecipações Solicitadas", f"{total_antecipados} pedidas")
+    m3.metric("✅ Agendamentos Confirmados", total_confirmados)
+    
+    # 2. Gráficos Visuais
+    g1, g2 = st.columns(2)
+    
+    with g1:
+        st.markdown("**Situação Atual dos Agendamentos (O que está pendente/longe?)**")
+        fases_contagem = df_filtrado['Fase do Agendamento'].value_counts().reindex(opcoes_permitidas, fill_value=0)
+        st.bar_chart(fases_contagem, color="#FF4B4B")
+        
+    with g2:
+        st.markdown("**Concentração de Cargas por Cliente/Rede**")
+        if 'Cliente' in df_filtrado.columns and not df_filtrado.empty:
+            cliente_contagem = df_filtrado['Cliente'].value_counts().head(10) # Top 10 clientes
+            st.bar_chart(cliente_contagem, color="#0068C9")
+
+    # 3. Exibição da Tabela de Controle Operacional
+    st.markdown("---")
+    st.subheader("📋 2. Painel de Controle Operacional")
+
     colunas_visiveis = [
         'Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 
         'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota'
@@ -146,7 +176,7 @@ if df_banco is not None and not df_banco.empty:
     
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
-    # Tabela Interativa Sem os sufixos "(Editável)"
+    # Tabela Interativa Limpa
     edited_df = st.data_editor(
         df_exibir,
         column_config={
@@ -166,7 +196,7 @@ if df_banco is not None and not df_banco.empty:
         },
         hide_index=True,
         use_container_width=True,
-        key="editor_fases_v6"
+        key="editor_fases_v7"
     )
     
     if st.button("🚀 Salvar Alterações"):
