@@ -139,7 +139,7 @@ if df_banco is not None and not df_banco.empty:
 
     # 📊 SEÇÃO GRÁFICOS E METRICAS GERENCIAIS
     st.markdown("---")
-    st.subheader("📊 Resumo Executivo (Visão do Gerente)")
+    st.subheader("📊 Resumo Executivo")
     
     # 1. Cards Indicadores
     m1, m2, m3 = st.columns(3)
