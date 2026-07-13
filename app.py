@@ -37,23 +37,25 @@ def salvar_dados_github(df_salvar, sha=None):
     response = requests.put(URL, headers=headers, json=data)
     return response.status_code in [200, 201]
 
-# Função para buscar os dados existentes no GitHub com tratamento robusto para arquivos vazios
+# Função de leitura robusta e blindada contra arquivos vazios
 def carregar_dados_github():
     response = requests.get(URL, headers=headers)
     if response.status_code == 200:
         content = response.json()
-        csv_data = base64.b64decode(content['content']).decode('utf-8')
-        
-        # Se o arquivo estiver completamente vazio ou sem linhas estruturadas
-        if not csv_data.strip():
-            return pd.DataFrame(), content['sha']
-            
+        sha = content.get('sha')
         try:
+            csv_data = base64.b64decode(content['content']).decode('utf-8')
+            if not csv_data.strip():
+                return pd.DataFrame(), sha
             df = pd.read_csv(io.StringIO(csv_data))
-            return df, content['sha']
-        except pd.errors.EmptyDataError:
-            return pd.DataFrame(), content['sha']
             
+            # Força a conversão correta para booleano ao ler do banco para não quebrar o data_editor
+            if 'E-mail enviado ao OPL' in df.columns:
+                df['E-mail enviado ao OPL'] = df['E-mail enviado ao OPL'].map({'True': True, 'False': False, True: True, False: False}).fillna(False)
+                
+            return df, sha
+        except Exception:
+            return pd.DataFrame(), sha
     return pd.DataFrame(), None
 
 # Carrega o histórico salvo na nuvem do Git
@@ -87,6 +89,8 @@ if uploaded_file:
         
     if 'E-mail enviado ao OPL' not in df_novo.columns:
         df_novo['E-mail enviado ao OPL'] = False
+    else:
+        df_novo['E-mail enviado ao OPL'] = df_novo['E-mail enviado ao OPL'].map({'True': True, 'False': False, True: True, False: False}).fillna(False)
         
     if 'Tem Antecipação?' not in df_novo.columns:
         df_novo['Tem Antecipação?'] = "Não"
@@ -124,7 +128,7 @@ if df_banco is not None and not df_banco.empty:
         cliente_upper = str(cliente).upper()
         if "MUFFATO" in cliente_upper: return "Muffato"
         elif "ATACADAO" in cliente_upper or "ATACADÃO" in cliente_upper: return "Atacadão"
-        elif "ASSAI" in cliente_upper or "ASSAÍ" in cliente_upper: return "Assaí"
+        elif "ASSAI" in cliente_upper or "ASSAÍ" in cliente_pure: return "Assaí"
         return "Outros"
         
     if 'Cliente' in df_banco.columns:
@@ -157,6 +161,10 @@ if df_banco is not None and not df_banco.empty:
     
     df_exibir = df_filtrado[[c for c in colunas_exibicao if c in df_filtrado.columns]]
     
+    # Garante conversão estrita antes de renderizar a tabela na tela
+    if 'E-mail enviado ao OPL' in df_exibir.columns:
+        df_exibir['E-mail enviado ao OPL'] = df_exibir['E-mail enviado ao OPL'].astype(bool)
+
     edited_df = st.data_editor(
         df_exibir,
         column_config={
