@@ -8,7 +8,7 @@ import io
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
 st.title("🚚 Controle de Agendamentos Logísticos")
-st.markdown("Sistema reconstruído do zero para controle de fases de agendamento.")
+st.markdown("Painel customizado para edição livre de datas, observações e status.")
 
 # Configurações do Repositório via Secrets
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
@@ -52,7 +52,7 @@ def carregar_dados_github():
             return pd.DataFrame(), sha
     return pd.DataFrame(), None
 
-# Carrega o banco de dados atualizado
+# Carrega o banco de dados
 df_banco, current_sha = carregar_dados_github()
 
 # 1. Área de Upload de novos relatórios
@@ -61,7 +61,6 @@ uploaded_file = st.file_uploader("Arraste aqui a planilha extraída do sistema",
 
 if uploaded_file:
     try:
-        # Leitura direta e simples do arquivo novo
         if uploaded_file.name.lower().endswith('.csv'):
             df_novo = pd.read_csv(uploaded_file)
         else:
@@ -69,7 +68,7 @@ if uploaded_file:
             
         df_novo.columns = df_novo.columns.str.strip()
         
-        # Garante que as colunas de controle operacional que você pediu existam
+        # Cria as colunas operacionais se não existirem no arquivo enviado
         if 'Fase do Agendamento' not in df_novo.columns:
             df_novo['Fase do Agendamento'] = "Pendente"
             
@@ -78,13 +77,15 @@ if uploaded_file:
             
         if 'E-mail enviado ao OPL' not in df_novo.columns:
             df_novo['E-mail enviado ao OPL'] = False
+            
+        if 'Antecipado' not in df_novo.columns:
+            df_novo['Antecipado'] = False
 
-        # Se já tiver dados salvos no banco, cruza pela chave única para não duplicar e manter o que foi editado
+        # Cruzamento simples usando Ordem de Carga e Nota para não duplicar linhas idênticas
         if df_banco is not None and not df_banco.empty and 'Ordem Carga' in df_novo.columns and 'Nº Nota' in df_novo.columns:
             df_banco['chave'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
             df_novo['chave'] = df_novo['Ordem Carga'].astype(str) + "_" + df_novo['Nº Nota'].astype(str)
             
-            # Mantém as linhas antigas que já estão no banco e adiciona apenas o que for novo do relatório
             novas_linhas = df_novo[~df_novo['chave'].isin(df_banco['chave'])]
             df_final = pd.concat([df_banco, novas_linhas], ignore_index=True).drop(columns=['chave'], errors='ignore')
         else:
@@ -97,7 +98,7 @@ if uploaded_file:
                     st.success("Planilha integrada com sucesso!")
                     st.rerun()
                 else:
-                    st.error("Erro ao salvar. Verifique se o Token nas Secrets está correto.")
+                    st.error("Erro ao salvar no repositório remoto.")
     except Exception as e:
         st.error(f"Erro ao ler o arquivo enviado: {e}")
 
@@ -107,7 +108,7 @@ st.subheader("📋 2. Painel de Controle Operacional")
 
 if df_banco is not None and not df_banco.empty:
     
-    # Filtro simples por cliente na barra lateral
+    # Filtro opcional por cliente
     if 'Cliente' in df_banco.columns:
         clientes_disponiveis = df_banco['Cliente'].dropna().unique().tolist()
         clientes_selecionados = st.sidebar.multiselect("Filtrar por Cliente", options=clientes_disponiveis, default=clientes_disponiveis)
@@ -115,26 +116,35 @@ if df_banco is not None and not df_banco.empty:
     else:
         df_filtrado = df_banco.copy()
         
-    # Garante tipos corretos para a tabela interativa não dar erro visual
+    # Padronização e limpeza de tipos para evitar erros no editor visual
     if 'E-mail enviado ao OPL' in df_filtrado.columns:
         df_filtrado['E-mail enviado ao OPL'] = df_filtrado['E-mail enviado ao OPL'].map({'True': True, 'False': False, True: True, False: False}).fillna(False).astype(bool)
+    if 'Antecipado' in df_filtrado.columns:
+        df_filtrado['Antecipado'] = df_filtrado['Antecipado'].map({'True': True, 'False': False, True: True, False: False}).fillna(False).astype(bool)
     if 'Pedido de Antecipação' in df_filtrado.columns:
         df_filtrado['Pedido de Antecipação'] = df_filtrado['Pedido de Antecipação'].fillna("").astype(str)
     if 'Fase do Agendamento' in df_filtrado.columns:
         df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str)
+    if 'Data Agendamento' in df_filtrado.columns:
+        df_filtrado['Data Agendamento'] = df_filtrado['Data Agendamento'].fillna("").astype(str)
+    if 'Obs. Logística' in df_filtrado.columns:
+        df_filtrado['Obs. Logística'] = df_filtrado['Obs. Logística'].fillna("").astype(str)
 
-    # Colunas que fará sentido você ver e editar na tela
+    # Definição das colunas visíveis na tabela
     colunas_visiveis = [
         'Ordem Carga', 'Cliente', 'Nº Nota', 'Data Agendamento', 'Obs. Logística',
-        'Fase do Agendamento', 'Pedido de Antecipação', 'E-mail enviado ao OPL'
+        'Fase do Agendamento', 'Pedido de Antecipação', 'Antecipado', 'E-mail enviado ao OPL'
     ]
     
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
-    # Tabela Interativa Customizada com os campos solicitados
+    # Tabela Interativa Ajustada
     edited_df = st.data_editor(
         df_exibir,
         column_config={
+            "Data Agendamento": st.column_config.TextColumn("Data Agendamento (Editável)"),
+            "Obs. Logística": st.column_config.TextColumn("Obs. Logística (Editável)"),
+            "Antecipado": st.column_config.CheckboxColumn("Antecipado?", default=False),
             "Fase do Agendamento": st.column_config.SelectboxColumn(
                 "Fase do Agendamento", 
                 options=["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"], 
@@ -142,26 +152,24 @@ if df_banco is not None and not df_banco.empty:
             ),
             "Pedido de Antecipação": st.column_config.TextColumn("Pedido de Antecipação (Data/Status)"),
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", default=False),
-            "Ordem Carga": st.column_config.TextColumn("Ordem Carga", disabled=True),
+            "Ordem Carga": st.column_config.TextColumn("Ordem Carga"), # Removido o disabled=True daqui
             "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
-            "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True),
-            "Data Agendamento": st.column_config.TextColumn("Data Agendamento", disabled=True),
-            "Obs. Logística": st.column_config.TextColumn("Obs. Logística", disabled=True)
+            "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
         hide_index=True,
         use_container_width=True,
-        key="editor_fases_zero"
+        key="editor_customizado_v2"
     )
     
-    if st.button("🚀 Salvar Alterações das Fases"):
-        # Aplica as modificações de volta no banco principal
+    if st.button("🚀 Salvar Alterações"):
+        # Mescla as atualizações feitas na tabela de volta para o banco
         df_banco.update(edited_df)
-        with st.spinner("Sincronizando com a nuvem..."):
+        with st.spinner("Salvando alterações em nuvem..."):
             sucesso = salvar_dados_github(df_banco, current_sha)
             if sucesso:
-                st.success("Alterações salvas com sucesso para toda a equipe!")
+                st.success("Alterações gravadas com sucesso!")
                 st.rerun()
             else:
-                st.error("Erro ao sincronizar. Tente atualizar a página.")
+                st.error("Erro ao sincronizar. Atualize a página.")
 else:
-    st.info("O banco de dados está vazio. Por favor, suba essa planilha nova acima para ativar o painel.")
+    st.info("O banco de dados está vazio. Suba a sua planilha para começar.")
