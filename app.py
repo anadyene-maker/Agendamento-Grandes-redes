@@ -81,13 +81,13 @@ if uploaded_file:
         if 'Antecipado' not in df_novo.columns:
             df_novo['Antecipado'] = False
 
-        # Cruzamento simples usando Ordem de Carga e Nota para não duplicar linhas idênticas
+        # Criação de chaves temporárias para o cruzamento inteligente
         if df_banco is not None and not df_banco.empty and 'Ordem Carga' in df_novo.columns and 'Nº Nota' in df_novo.columns:
-            df_banco['chave'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
-            df_novo['chave'] = df_novo['Ordem Carga'].astype(str) + "_" + df_novo['Nº Nota'].astype(str)
+            df_banco['chave_temp'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
+            df_novo['chave_temp'] = df_novo['Ordem Carga'].astype(str) + "_" + df_novo['Nº Nota'].astype(str)
             
-            novas_linhas = df_novo[~df_novo['chave'].isin(df_banco['chave'])]
-            df_final = pd.concat([df_banco, novas_linhas], ignore_index=True).drop(columns=['chave'], errors='ignore')
+            novas_linhas = df_novo[~df_novo['chave_temp'].isin(df_banco['chave_temp'])]
+            df_final = pd.concat([df_banco, novas_linhas], ignore_index=True).drop(columns=['chave_temp'], errors='ignore')
         else:
             df_final = df_novo
 
@@ -130,10 +130,10 @@ if df_banco is not None and not df_banco.empty:
     if 'Obs. Logística' in df_filtrado.columns:
         df_filtrado['Obs. Logística'] = df_filtrado['Obs. Logística'].fillna("").astype(str)
 
-    # Definição das colunas visíveis na tabela
+    # Definição das colunas visíveis em ordem otimizada para o seu trabalho
     colunas_visiveis = [
-        'Ordem Carga', 'Cliente', 'Nº Nota', 'Data Agendamento', 'Obs. Logística',
-        'Fase do Agendamento', 'Pedido de Antecipação', 'Antecipado', 'E-mail enviado ao OPL'
+        'Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 
+        'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota'
     ]
     
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
@@ -142,29 +142,38 @@ if df_banco is not None and not df_banco.empty:
     edited_df = st.data_editor(
         df_exibir,
         column_config={
-            "Data Agendamento": st.column_config.TextColumn("Data Agendamento (Editável)"),
-            "Obs. Logística": st.column_config.TextColumn("Obs. Logística (Editável)"),
-            "Antecipado": st.column_config.CheckboxColumn("Antecipado?", default=False),
             "Fase do Agendamento": st.column_config.SelectboxColumn(
                 "Fase do Agendamento", 
                 options=["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"], 
                 required=True
             ),
+            "Antecipado": st.column_config.CheckboxColumn("Antecipado?", default=False),
+            "Data Agendamento": st.column_config.TextColumn("Data Agendamento (Editável)"),
+            "Obs. Logística": st.column_config.TextColumn("Obs. Logística (Editável)"),
             "Pedido de Antecipação": st.column_config.TextColumn("Pedido de Antecipação (Data/Status)"),
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", default=False),
-            "Ordem Carga": st.column_config.TextColumn("Ordem Carga"), # Removido o disabled=True daqui
+            "Ordem Carga": st.column_config.TextColumn("Ordem Carga"),
             "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
         hide_index=True,
         use_container_width=True,
-        key="editor_customizado_v2"
+        key="editor_customizado_v3"
     )
     
     if st.button("🚀 Salvar Alterações"):
-        # Mescla as atualizações feitas na tabela de volta para o banco
-        df_banco.update(edited_df)
         with st.spinner("Salvando alterações em nuvem..."):
+            # Lógica robusta de mapeamento indexado para salvar colunas editáveis
+            df_banco['chave_temp'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
+            edited_df['chave_temp'] = edited_df['Ordem Carga'].astype(str) + "_" + edited_df['Nº Nota'].astype(str)
+            
+            for col in edited_df.columns:
+                if col != 'chave_temp':
+                    mapeamento = dict(zip(edited_df['chave_temp'], edited_df[col]))
+                    df_banco[col] = df_banco['chave_temp'].map(mapeamento).fillna(df_banco[col])
+            
+            df_banco = df_banco.drop(columns=['chave_temp'], errors='ignore')
+            
             sucesso = salvar_dados_github(df_banco, current_sha)
             if sucesso:
                 st.success("Alterações gravadas com sucesso!")
