@@ -55,49 +55,64 @@ def carregar_dados_github():
 df_banco, current_sha = carregar_dados_github()
 
 st.subheader("📥 Alimentar o Sistema")
-uploaded_file = st.file_uploader("Arraste o relatório aqui (Aceita o Excel do sistema ou a planilha em CSV)", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Arraste o relatório aqui (Excel ou CSV)", type=["xlsx", "csv"])
 
 if uploaded_file:
+    df_novo = None
     try:
-        # --- ESTRUTURA UNIVERSAL DE LEITURA (EXCEL E CSV) ---
+        # --- MOTOR DE LEITURA UNIVERSAL ---
         if uploaded_file.name.lower().endswith('.csv'):
-            # 1. Lê o arquivo bruto para descobrir onde está o cabeçalho real
+            # Lendo formato CSV
             bytes_data = uploaded_file.read()
             text_data = bytes_data.decode('utf-8', errors='ignore')
             linhas = text_data.splitlines()
+            uploaded_file.seek(0)
             
+            # Identifica a linha correta do cabeçalho
             skip_rows = 0
             for i, linha in enumerate(linhas[:10]):
                 if "Ordem Carga" in linha:
                     skip_rows = i
                     break
             
-            # Voltar o ponteiro do arquivo para o início antes de ler com o pandas
-            uploaded_file.seek(0)
-            
-            # Detecta o separador correto (, ou ;)
-            amostra = linhas[skip_rows] if len(linhas) > skip_rows else ""
-            separador = ';' if ';' in amostra else ','
-            
+            separador = ';' if ';' in (linhas[skip_rows] if len(linhas) > skip_rows else "") else ','
             df_novo = pd.read_csv(uploaded_file, skiprows=skip_rows, sep=separador)
         else:
-            # Se for Excel (.xlsx)
-            df_teste = pd.read_excel(uploaded_file, nrows=5)
-            # Verifica se a primeira linha contém sujeira do relatório
-            primeira_celula = str(df_teste.iloc[0, 0]) if not df_teste.empty else ""
-            if "arquivo" in primeira_celula or "Emissão" in primeira_celula or df_teste.columns[0] == "arquivo":
-                df_novo = pd.read_excel(uploaded_file, skiprows=2)
+            # Lendo formato Excel (.xlsx)
+            df_excel_cru = pd.read_excel(uploaded_file)
+            uploaded_file.seek(0)
+            
+            # Varre as primeiras linhas para achar onde está o cabeçalho "Ordem Carga"
+            skip_rows = None
+            for i in range(min(10, len(df_excel_cru))):
+                linha_valores = df_excel_cru.iloc[i].astype(str).tolist()
+                if any("Ordem Carga" in v for v in linha_valores):
+                    skip_rows = i + i  # Ajuste do índice real de pulo
+                    break
+            
+            if skip_rows is not None:
+                df_novo = pd.read_excel(uploaded_file, skiprows=skip_rows)
             else:
-                df_novo = pd.read_excel(uploaded_file)
+                # Fallback se não encontrar o marcador textual nas linhas
+                df_teste = pd.read_excel(uploaded_file, nrows=5)
+                if df_teste.dropna(how='all').iloc[0].astype(str).str.contains('Emissão|Total|Relatório|arquivo').any():
+                    df_novo = pd.read_excel(uploaded_file, skiprows=2)
+                else:
+                    df_novo = pd.read_excel(uploaded_file)
         
-        # Limpa espaços em branco ocultos nos nomes das colunas
-        df_novo.columns = df_novo.columns.str.strip()
+        # Garante a limpeza dos nomes das colunas
+        if df_novo is not None:
+            df_novo.columns = df_novo.columns.str.strip()
+            
+            # Tratamento caso a primeira linha ainda venha duplicada como string residual do cabeçalho
+            if not df_novo.empty and "Ordem Carga" in str(df_novo.iloc[0, 0]):
+                df_novo = df_novo.iloc[1:].reset_index(drop=True)
         
-        # Validação crucial de segurança
-        if 'Ordem Carga' not in df_novo.columns or 'Nº Nota' not in df_novo.columns:
-            st.error(f"Cabeçalho não identificado corretamente. Colunas encontradas: {list(df_novo.columns)}")
+        # Validação crucial de segurança das colunas
+        if df_novo is None or 'Ordem Carga' not in df_novo.columns or 'Nº Nota' not in df_novo.columns:
+            st.error("Não foi possível mapear as colunas obrigatórias ('Ordem Carga' e 'Nº Nota'). Por favor, verifique a estrutura do arquivo enviado.")
         else:
-            # Criar colunas operacionais com segurança se não existirem
+            # Inicializa colunas operacionais se não existirem
             if 'Agendado Para' not in df_novo.columns:
                 df_novo['Agendado Para'] = df_novo['Data Agendamento'].fillna("") if 'Data Agendamento' in df_novo.columns else ""
                 
@@ -118,7 +133,7 @@ if uploaded_file:
                     if 'antecipar' in obs or 'portal indeferiu' in obs or 'indefe' in obs:
                         df_novo.at[idx, 'Tem Antecipação?'] = "⚠️ Solicitar Antecipação"
             
-            # Cruzamento inteligente com a base histórica
+            # Sincronização inteligente com o banco remoto
             if df_banco is not None and not df_banco.empty:
                 df_banco['chave'] = df_banco['Ordem Carga'].astype(str) + "_" + df_banco['Nº Nota'].astype(str)
                 df_novo['chave'] = df_novo['Ordem Carga'].astype(str) + "_" + df_novo['Nº Nota'].astype(str)
@@ -138,7 +153,7 @@ if uploaded_file:
                         st.error("Erro ao salvar no repositório. Verifique as configurações do Token.")
                         
     except Exception as e:
-        st.error(f"Erro crítico no processamento: {e}")
+        st.error(f"Erro crítico no processamento do arquivo: {e}")
 
 # Exibição do painel se houver dados salvos
 if df_banco is not None and not df_banco.empty:
