@@ -128,7 +128,7 @@ if df_banco is not None and not df_banco.empty:
         cliente_upper = str(cliente).upper()
         if "MUFFATO" in cliente_upper: return "Muffato"
         elif "ATACADAO" in cliente_upper or "ATACADÃO" in cliente_upper: return "Atacadão"
-        elif "ASSAI" in cliente_upper or "ASSAÍ" in cliente_pure: return "Assaí"
+        elif "ASSAI" in cliente_upper or "ASSAÍ" in cliente_upper: return "Assaí"
         return "Outros"
         
     if 'Cliente' in df_banco.columns:
@@ -161,7 +161,6 @@ if df_banco is not None and not df_banco.empty:
     
     df_exibir = df_filtrado[[c for c in colunas_exibicao if c in df_filtrado.columns]]
     
-    # Garante conversão estrita antes de renderizar a tabela na tela
     if 'E-mail enviado ao OPL' in df_exibir.columns:
         df_exibir['E-mail enviado ao OPL'] = df_exibir['E-mail enviado ao OPL'].astype(bool)
 
