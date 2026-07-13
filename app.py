@@ -136,10 +136,17 @@ if df_banco is not None and not df_banco.empty:
     if 'Antecipado' in df_filtrado.columns:
         df_filtrado['Antecipado'] = df_filtrado['Antecipado'].map({'True': True, 'False': False, True: True, False: False}).fillna(False).astype(bool)
     
-    colunas_texto = ['Fase do Agendamento', 'Pedido de Antecipação', 'Data Agendamento', 'Obs. Logística', 'Ordem Carga', 'Nº Nota']
+    colunas_texto = ['Pedido de Antecipação', 'Data Agendamento', 'Obs. Logística', 'Ordem Carga', 'Nº Nota']
     for col in colunas_texto:
         if col in df_filtrado.columns:
             df_filtrado[col] = df_filtrado[col].fillna("").astype(str)
+
+    # CORREÇÃO CRÍTICA: Limpa e padroniza os textos salvos para bater com as opções exatas da caixinha
+    opcoes_permitidas = ["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"]
+    if 'Fase do Agendamento' in df_filtrado.columns:
+        df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
+        # Se houver qualquer valor fora do padrão antigo na base, força para "Pendente" para não quebrar
+        df_filtrado.loc[~df_filtrado['Fase do Agendamento'].isin(opcoes_permitidas), 'Fase do Agendamento'] = "Pendente"
 
     # Organização das colunas na ordem perfeita de trabalho
     colunas_visiveis = [
@@ -155,7 +162,7 @@ if df_banco is not None and not df_banco.empty:
         column_config={
             "Fase do Agendamento": st.column_config.SelectboxColumn(
                 "Fase do Agendamento", 
-                options=["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"], 
+                options=opcoes_permitidas, 
                 required=True
             ),
             "Antecipado": st.column_config.CheckboxColumn("Antecipado?"),
@@ -169,12 +176,11 @@ if df_banco is not None and not df_banco.empty:
         },
         hide_index=True,
         use_container_width=True,
-        key="editor_fases_v4"
+        key="editor_fases_v5"
     )
     
     if st.button("🚀 Salvar Alterações"):
         with st.spinner("Gravando edições de forma segura..."):
-            # Lógica de salvamento blindada usando o Nº Nota como indexador estável
             df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
             edited_df['Nº Nota'] = edited_df['Nº Nota'].astype(str).str.strip()
             
