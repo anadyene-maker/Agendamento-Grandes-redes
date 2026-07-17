@@ -12,10 +12,10 @@ st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wi
 
 # Mapeamento de e-mails dos Operadores (Ajuste os e-mails reais aqui)
 EMAILS_OPERADORES = {
-    "CARRARO ARMAZENS GERAIS LTDA": "torrecontrole@semalo.com.br",  #email para teste 
+    "CARRARO ARMAZENS GERAIS LTDA": "logistica@carraro.com.br",
     "J. LOBO": "agendamento@jlobo.com.br",
-    "CARRARO": "logistica@carraro.com.br", # Variação curta caso ocorra
-    "J.LOBO": "agendamento@jlobo.com.br"    # Variação curta caso ocorra
+    "CARRARO": "logistica@carraro.com.br",
+    "J.LOBO": "agendamento@jlobo.com.br"
 }
 
 # 🎭 CÓDIGO PARA IMPRESSÃO E ESTILIZAÇÃO
@@ -47,7 +47,6 @@ headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.
 # 📧 FUNÇÃO PARA ENVIAR E-MAIL VIA SMTP
 def enviar_email_opl(destinatario, dados_carga):
     try:
-        # Puxa as configurações das Secrets
         remetente = st.secrets["email"]["user"]
         senha = st.secrets["email"]["password"]
         server_smtp = st.secrets["email"]["smtp_server"]
@@ -58,7 +57,6 @@ def enviar_email_opl(destinatario, dados_carga):
         msg['To'] = destinatario
         msg['Subject'] = f"📢 CONFIRMAÇÃO DE AGENDAMENTO - NOTA FISCAL {dados_carga['Nº Nota']}"
         
-        # Corpo do e-mail formal em HTML
         corpo = f"""
         <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -79,7 +77,6 @@ def enviar_email_opl(destinatario, dados_carga):
         """
         msg.attach(MIMEText(corpo, 'html'))
         
-        # Conexão segura com o servidor
         server = smtplib.SMTP(server_smtp, porta_smtp)
         server.starttls()
         server.login(remetente, senha)
@@ -176,6 +173,7 @@ if df_banco is not None and not df_banco.empty:
     colunas_visiveis = ['Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 'Operador Logístico', 'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota']
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
+    # 🛠️ CORREÇÃO CRÍTICA: Mudamos disabled=True para disabled=not modo_editor na linha do E-mail enviado ao OPL
     edited_df = st.data_editor(
         df_exibir,
         column_config={
@@ -184,10 +182,10 @@ if df_banco is not None and not df_banco.empty:
             "Data Agendamento": st.column_config.TextColumn("Data Agendamento", disabled=not modo_editor),
             "Obs. Logística": st.column_config.TextColumn("Obs. Logística", disabled=not modo_editor),
             "Operador Logístico": st.column_config.TextColumn("Operador Logístico", disabled=True),
-            "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=True), # Travado para o sistema gerenciar
+            "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor), # LIBERADO!
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v11"
+        hide_index=True, use_container_width=True, key="editor_fases_v12"
     )
     
     if modo_editor:
@@ -196,28 +194,24 @@ if df_banco is not None and not df_banco.empty:
                 df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
                 edited_df['Nº Nota'] = edited_df['Nº Nota'].astype(str).str.strip()
                 
-                # 🛠️ LÓGICA DE DETECÇÃO E ENVIO DE E-MAIL
                 for idx, row in edited_df.iterrows():
                     nota = row['Nº Nota']
                     nova_fase = row['Fase do Agendamento']
                     
-                    # Localiza a linha correspondente no banco original
                     idx_banco = df_banco[df_banco['Nº Nota'] == nota].index
                     if len(idx_banco) > 0:
                         idx_banco = idx_banco[0]
                         email_ja_enviado = df_banco.at[idx_banco, 'E-mail enviado ao OPL']
                         
-                        # Converte strings de salvamentos anteriores se necessário
                         if str(email_ja_enviado).lower() in ['true', '1']: email_ja_enviado = True
                         if str(email_ja_enviado).lower() in ['false', '0']: email_ja_enviado = False
                         
-                        # CONDIÇÃO: Se mudou para Confirmado E o e-mail ainda não foi enviado
-                        if nova_fase == "Confirmado" and not email_ja_enviado:
+                        # Se mudou para Confirmado e a caixinha de e-mail ainda está desmarcada na TELA, dispara o e-mail
+                        if nova_fase == "Confirmado" and not row['E-mail enviado ao OPL'] and not email_ja_enviado:
                             operador = row['Operador Logístico']
                             destinatario_email = EMAILS_OPERADORES.get(operador)
                             
                             if destinatario_email:
-                               # Tenta disparar o e-mail
                                sucesso_envio = enviar_email_opl(destinatario_email, row)
                                if sucesso_envio:
                                    edited_df.at[idx, 'E-mail enviado ao OPL'] = True
@@ -225,14 +219,13 @@ if df_banco is not None and not df_banco.empty:
                             else:
                                st.warning(f"⚠️ Operador '{operador}' não possui e-mail cadastrado no dicionário do código.")
 
-                # Atualiza o banco completo com os novos valores da tabela da tela
                 for col in edited_df.columns:
                     if col != 'Nº Nota' and col in df_banco.columns:
                         mapeamento = dict(zip(edited_df['Nº Nota'], edited_df[col]))
                         df_banco[col] = df_banco['Nº Nota'].map(mapeamento).fillna(df_banco[col])
                 
                 if salvar_dados_github(df_banco, current_sha):
-                    st.success("Alterações salvas e e-mails disparados com sucesso!")
+                    st.success("Alterações salvas com sucesso!")
                     st.rerun()
     else:
         st.info("💡 Modo de Visualização Ativo.")
