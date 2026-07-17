@@ -10,12 +10,12 @@ from email.mime.multipart import MIMEMultipart
 # Configuração da página
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
-# Mapeamento de e-mails dos Operadores (Ajuste os e-mails reais aqui)
+# Mapeamento de e-mails de TESTE 
 EMAILS_OPERADORES = {
-    "CARRARO ARMAZENS GERAIS LTDA": "logistica@carraro.com.br",
-    "J. LOBO": "agendamento@jlobo.com.br",
-    "CARRARO": "logistica@carraro.com.br",
-    "J.LOBO": "agendamento@jlobo.com.br"
+    "CARRARO ARMAZENS GERAIS LTDA": "torrecontrole@semalo.com.br",
+    "J. LOBO": "seu-email-aqui@dominio.com",
+    "CARRARO": "seu-email-aqui@dominio.com",
+    "J.LOBO": "seu-email-aqui@dominio.com"
 }
 
 # 🎭 CÓDIGO PARA IMPRESSÃO E ESTILIZAÇÃO
