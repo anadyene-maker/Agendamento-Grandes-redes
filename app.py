@@ -7,9 +7,22 @@ import io
 # Configuração da página
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
-# 🎭 CÓDIGO PARA IMPRESSÃO: Mantém apenas os gráficos visíveis na hora de imprimir
+# 🎭 CÓDIGO PARA IMPRESSÃO E ESTILIZAÇÃO DOS CHECKBOXES
 st.markdown("""
     <style>
+    /* Estilização dos Checkboxes marcados na tabela do Streamlit */
+    /* 1. Alvo geral para achar checkboxes marcados dentro do editor de dados */
+    div[data-testid="stDataFrame"] input[type="checkbox"]:checked {
+        background-color: #28a745 !important; /* Cor padrão verde */
+        border-color: #28a745 !important;
+    }
+    
+    /* Customização avançada via CSS injetado no container para dar cores diferentes por coluna se o navegador suportar */
+    /* Como o Streamlit renderiza como tabela canvas/HTML, essa regra aplica um filtro visual limpo */
+    div[data-testid="stDataFrame"] {
+        --accent-color: #28a745;
+    }
+
     @media print {
         section[data-testid="stSidebar"], 
         .stFileUploader, 
@@ -80,7 +93,7 @@ df_banco, current_sha = carregar_dados_github()
 
 # 🔐 CONTROLE DE ACESSO NA BARRA LATERAL
 st.sidebar.markdown("### 🔑 Controle de Acesso")
-modo_editor = st.sidebar.checkbox("Ativar Modo Editor", value=False)
+modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
 
 # 1. Área de Upload de novos relatórios (Só aparece no modo editor)
 if modo_editor:
@@ -156,7 +169,7 @@ if df_banco is not None and not df_banco.empty:
     # 📑 FILTROS NA BARRA LATERAL
     st.sidebar.markdown("### 🔍 Filtros de Operação")
     
-    # Filtro 1: Operador Logístico (Carraro, J.Lobo, etc.)
+    # Filtro 1: Operador Logístico
     opls_disponiveis = df_banco['Operador Logístico'].unique().tolist()
     opls_selecionados = st.sidebar.multiselect("Filtrar por Operador Logístico", options=opls_disponiveis, default=opls_disponiveis)
     df_filtrado = df_banco[df_banco['Operador Logístico'].isin(opls_selecionados)].copy()
@@ -188,7 +201,7 @@ if df_banco is not None and not df_banco.empty:
     
     c_titulo, c_botao = st.columns([3, 1])
     with c_titulo:
-        st.subheader("📊 Resumo Executivo")
+        st.subheader("📊 Resumo Executivo (Visão do Gerente)")
     with c_botao:
         st.markdown("""
             <button onclick="window.print()" style="
@@ -238,7 +251,7 @@ if df_banco is not None and not df_banco.empty:
     
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
-    # Tabela Interativa (Bloqueia ou libera edições com base na caixinha lateral)
+    # Tabela Interativa
     edited_df = st.data_editor(
         df_exibir,
         column_config={
@@ -255,10 +268,9 @@ if df_banco is not None and not df_banco.empty:
         },
         hide_index=True,
         use_container_width=True,
-        key="editor_fases_v9"
+        key="editor_fases_v10"
     )
     
-    # Botão de salvar só aparece se o usuário ativar o modo editor
     if modo_editor:
         if st.button("🚀 Salvar Alterações"):
             with st.spinner("Gravando edições de forma segura..."):
