@@ -12,7 +12,7 @@ st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wi
 
 # Mapeamento de e-mails dos Operadores (Ajuste os e-mails reais aqui)
 EMAILS_OPERADORES = {
-    "CARRARO ARMAZENS GERAIS LTDA": "logistica@carraro.com.br",
+    "CARRARO ARMAZENS GERAIS LTDA": "torrecontrole@semalo.com.br",  #email para teste 
     "J. LOBO": "agendamento@jlobo.com.br",
     "CARRARO": "logistica@carraro.com.br", # Variação curta caso ocorra
     "J.LOBO": "agendamento@jlobo.com.br"    # Variação curta caso ocorra
