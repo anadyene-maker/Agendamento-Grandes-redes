@@ -109,7 +109,6 @@ def carregar_dados_github():
             if not csv_data.strip():
                 return pd.DataFrame(), sha
             
-            # Tenta ler com separador ; primeiro, depois com vírgula se falhar
             try:
                 df = pd.read_csv(io.StringIO(csv_data), sep=';')
                 if len(df.columns) <= 1:
@@ -164,6 +163,11 @@ if modo_editor:
 if df_banco is None or df_banco.empty:
     st.info("ℹ️ O banco de dados no GitHub está vazio ou não foi encontrado.")
 else:
+    # Garante que as colunas customizadas existam
+    for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False, 'Obs. Logística': ''}.items():
+        if col not in df_banco.columns:
+            df_banco[col] = default
+
     if 'Operador Logístico' not in df_banco.columns:
         df_banco['Operador Logístico'] = df_banco['Logística Ent.'] if 'Logística Ent.' in df_banco.columns else (df_banco['Transportadora'] if 'Transportadora' in df_banco.columns else "Não Informado")
     df_banco['Operador Logístico'] = df_banco['Operador Logístico'].fillna("Não Informado").astype(str).str.strip()
@@ -183,8 +187,7 @@ else:
         if col in df_filtrado.columns: df_filtrado[col] = df_filtrado[col].fillna("").astype(str)
 
     opcoes_permitidas = ["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"]
-    if 'Fase do Agendamento' in df_filtrado.columns:
-        df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
+    df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
 
     st.markdown("---")
     st.subheader("📊 Resumo Executivo (Visão do Gerente)")
@@ -209,7 +212,7 @@ else:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v17"
+        hide_index=True, use_container_width=True, key="editor_fases_v18"
     )
     
     if modo_editor:
