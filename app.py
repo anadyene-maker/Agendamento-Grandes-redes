@@ -10,7 +10,7 @@ from email.mime.multipart import MIMEMultipart
 # Configuração da página
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
-# Mapeamento de e-mails dos Operadores (Ajuste para os e-mails reais ou seu e-mail de teste)
+# Mapeamento de e-mails dos Operadores
 EMAILS_OPERADORES = {
     "CARRARO ARMAZENS GERAIS LTDA": "logistica@carraro.com.br",
     "J. LOBO": "agendamento@jlobo.com.br",
@@ -38,7 +38,7 @@ st.markdown("""
 st.title("🚚 Controle de Agendamentos Logísticos")
 
 # Configurações do Repositório via Secrets
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 REPO = "anadyene-maker/Agendamento-Grandes-redes"
 FILE_PATH = "base_dados_agendamentos.csv"
 URL = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
@@ -63,11 +63,11 @@ def enviar_email_opl(destinatario, dados_carga):
             <p>Prezada equipe de Logística,</p>
             <p>Confirmamos o agendamento da carga abaixo e solicitamos a programação do carregamento/entrega:</p>
             <table style="border-collapse: collapse; width: 100%; max-width: 600px; margin: 20px 0;">
-                <tr style="background-color: #f2f2f2;"><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Cliente/Rede:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga['Cliente']}</td></tr>
-                <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Nº Nota Fiscal:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga['Nº Nota']}</td></tr>
-                <tr style="background-color: #f2f2f2;"><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Ordem de Carga:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga['Ordem Carga']}</td></tr>
-                <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Data/Hora Agendada:</td><td style="padding: 8px; border: 1px solid #ddd; color: #d9534f; font-weight: bold;">{dados_carga['Data Agendamento']}</td></tr>
-                <tr style="background-color: #f2f2f2;"><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Obs. Logística:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga['Obs. Logística']}</td></tr>
+                <tr style="background-color: #f2f2f2;"><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Cliente/Rede:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga.get('Cliente', '')}</td></tr>
+                <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Nº Nota Fiscal:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga.get('Nº Nota', '')}</td></tr>
+                <tr style="background-color: #f2f2f2;"><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Ordem de Carga:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga.get('Ordem Carga', '')}</td></tr>
+                <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Data/Hora Agendada:</td><td style="padding: 8px; border: 1px solid #ddd; color: #d9534f; font-weight: bold;">{dados_carga.get('Data Agendamento', '')}</td></tr>
+                <tr style="background-color: #f2f2f2;"><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Obs. Logística:</td><td style="padding: 8px; border: 1px solid #ddd;">{dados_carga.get('Obs. Logística', '')}</td></tr>
             </table>
             <p><em>Por favor, considerem este e-mail como a validação oficial da agenda.</em></p>
             <br>
@@ -106,8 +106,11 @@ def carregar_dados_github():
         sha = content.get('sha')
         try:
             csv_data = base64.b64decode(content['content']).decode('utf-8')
-            return (pd.DataFrame() if not csv_data.strip() else pd.read_csv(io.StringIO(csv_data))), sha
-        except: return pd.DataFrame(), sha
+            if not csv_data.strip():
+                return pd.DataFrame(), sha
+            return pd.read_csv(io.StringIO(csv_data)), sha
+        except:
+            return pd.DataFrame(), sha
     return pd.DataFrame(), None
 
 df_banco, current_sha = carregar_dados_github()
@@ -116,7 +119,7 @@ df_banco, current_sha = carregar_dados_github()
 st.sidebar.markdown("### 🔑 Controle de Acesso")
 modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
 
-# 📥 SEÇÃO DE UPLOAD (Habilitada sempre que o Modo Editor estiver ativo)
+# 📥 SEÇÃO DE UPLOAD
 if modo_editor:
     st.markdown("---")
     st.subheader("📥 1. Alimentar com Nova Planilha do Sistema (Sankhya)")
@@ -142,13 +145,15 @@ if modo_editor:
 
             if st.button("💾 Enviar e Atualizar Banco de Dados Compartilhado"):
                 if salvar_dados_github(df_final, current_sha):
-                    st.success("Dados da planilha do Sankhya integrados com sucesso no GitHub!")
+                    st.success("Dados da planilha do Sankhya integrados com sucesso!")
                     st.rerun()
         except Exception as e: 
             st.error(f"Erro ao processar planilha: {e}")
 
 # 📊 EXIBIÇÃO E FILTROS
-if df_banco is not None and not df_banco.empty:
+if df_banco is None or df_banco.empty:
+    st.info("ℹ️ Nenhuma carga encontrada na base de dados. Marque a opção **Ativar Modo Editor (Apenas Ana)** na barra lateral para carregar a planilha do Sankhya.")
+else:
     if 'Operador Logístico' not in df_banco.columns:
         df_banco['Operador Logístico'] = df_banco['Logística Ent.'] if 'Logística Ent.' in df_banco.columns else (df_banco['Transportadora'] if 'Transportadora' in df_banco.columns else "Não Informado")
     df_banco['Operador Logístico'] = df_banco['Operador Logístico'].fillna("Não Informado").astype(str).str.strip()
@@ -194,7 +199,7 @@ if df_banco is not None and not df_banco.empty:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v14"
+        hide_index=True, use_container_width=True, key="editor_fases_v15"
     )
     
     if modo_editor:
