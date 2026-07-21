@@ -55,7 +55,7 @@ def enviar_email_opl(destinatario, dados_carga):
         msg = MIMEMultipart()
         msg['From'] = remetente
         msg['To'] = destinatario
-        msg['Subject'] = f"📢 CONFIRMAÇÃO DE AGENDAMENTO - NOTA FISCAL {dados_carga['Nº Nota']}"
+        msg['Subject'] = f"📢 CONFIRMAÇÃO DE AGENDAMENTO - NOTA FISCAL {dados_carga.get('Nº Nota', '')}"
         
         corpo = f"""
         <html>
@@ -100,18 +100,23 @@ def salvar_dados_github(df_salvar, sha=None):
     return requests.put(URL, headers=headers, json=data).status_code in [200, 201]
 
 def carregar_dados_github():
-    response = requests.get(URL, headers=headers)
-    if response.status_code == 200:
-        content = response.json()
-        sha = content.get('sha')
-        try:
-            csv_data = base64.b64decode(content['content']).decode('utf-8')
+    try:
+        response = requests.get(URL, headers=headers)
+        if response.status_code == 200:
+            content = response.json()
+            sha = content.get('sha')
+            csv_data = base64.b64decode(content['content']).decode('utf-8', errors='ignore')
             if not csv_data.strip():
                 return pd.DataFrame(), sha
-            return pd.read_csv(io.StringIO(csv_data)), sha
-        except:
-            return pd.DataFrame(), sha
-    return pd.DataFrame(), None
+            df = pd.read_csv(io.StringIO(csv_data))
+            df.columns = df.columns.str.strip()
+            return df, sha
+        else:
+            st.warning(f"⚠️ Não foi possível ler o arquivo do GitHub (Status Code: {response.status_code}).")
+            return pd.DataFrame(), None
+    except Exception as e:
+        st.error(f"Erro na conexão com GitHub: {e}")
+        return pd.DataFrame(), None
 
 df_banco, current_sha = carregar_dados_github()
 
@@ -119,40 +124,38 @@ df_banco, current_sha = carregar_dados_github()
 st.sidebar.markdown("### 🔑 Controle de Acesso")
 modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
 
-# 📥 SEÇÃO DE UPLOAD
+# 📥 SEÇÃO DE UPLOAD OPIONAL NO MODO EDITOR
 if modo_editor:
-    st.markdown("---")
-    st.subheader("📥 1. Alimentar com Nova Planilha do Sistema (Sankhya)")
-    uploaded_file = st.file_uploader("Arraste aqui a planilha do Sankhya (Excel ou CSV)", type=["xlsx", "csv"])
-    
-    if uploaded_file:
-        try:
-            df_raw = pd.read_csv(uploaded_file, header=None) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None)
-            linha_cabecalho = next((idx for idx, row in df_raw.iterrows() if any("Nº Nota" in str(s) or "Ordem Carga" in str(s) for s in row)), 0)
-            uploaded_file.seek(0)
-            df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, skiprows=linha_cabecalho)
-            df_novo.columns = df_novo.columns.str.strip()
-            
-            for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False}.items():
-                if col not in df_novo.columns: df_novo[col] = default
+    with st.expander("📥 Deseja mesclar uma nova planilha do Sankhya? (Opcional)"):
+        uploaded_file = st.file_uploader("Arraste a planilha do Sankhya (Excel ou CSV)", type=["xlsx", "csv"])
+        if uploaded_file:
+            try:
+                df_raw = pd.read_csv(uploaded_file, header=None) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None)
+                linha_cabecalho = next((idx for idx, row in df_raw.iterrows() if any("Nº Nota" in str(s) or "Ordem Carga" in str(s) for s in row)), 0)
+                uploaded_file.seek(0)
+                df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, skiprows=linha_cabecalho)
+                df_novo.columns = df_novo.columns.str.strip()
+                
+                for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False}.items():
+                    if col not in df_novo.columns: df_novo[col] = default
 
-            if df_banco is not None and not df_banco.empty:
-                df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
-                df_novo['Nº Nota'] = df_novo['Nº Nota'].astype(str).str.strip()
-                df_final = pd.concat([df_banco, df_novo[~df_novo['Nº Nota'].isin(df_banco['Nº Nota'])]], ignore_index=True)
-            else:
-                df_final = df_novo
+                if df_banco is not None and not df_banco.empty:
+                    df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
+                    df_novo['Nº Nota'] = df_novo['Nº Nota'].astype(str).str.strip()
+                    df_final = pd.concat([df_banco, df_novo[~df_novo['Nº Nota'].isin(df_banco['Nº Nota'])]], ignore_index=True)
+                else:
+                    df_final = df_novo
 
-            if st.button("💾 Enviar e Atualizar Banco de Dados Compartilhado"):
-                if salvar_dados_github(df_final, current_sha):
-                    st.success("Dados da planilha do Sankhya integrados com sucesso!")
-                    st.rerun()
-        except Exception as e: 
-            st.error(f"Erro ao processar planilha: {e}")
+                if st.button("💾 Mesclar e Atualizar no GitHub"):
+                    if salvar_dados_github(df_final, current_sha):
+                        st.success("Dados integrados com sucesso no GitHub!")
+                        st.rerun()
+            except Exception as e: 
+                st.error(f"Erro ao processar planilha: {e}")
 
 # 📊 EXIBIÇÃO E FILTROS
 if df_banco is None or df_banco.empty:
-    st.info("ℹ️ Nenhuma carga encontrada na base de dados. Marque a opção **Ativar Modo Editor (Apenas Ana)** na barra lateral para carregar a planilha do Sankhya.")
+    st.info("ℹ️ O banco de dados no GitHub está vazio ou não foi encontrado. Se já subiu o arquivo, verifique se o nome no repositório é exatamente `base_dados_agendamentos.csv`.")
 else:
     if 'Operador Logístico' not in df_banco.columns:
         df_banco['Operador Logístico'] = df_banco['Logística Ent.'] if 'Logística Ent.' in df_banco.columns else (df_banco['Transportadora'] if 'Transportadora' in df_banco.columns else "Não Informado")
@@ -199,7 +202,7 @@ else:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v15"
+        hide_index=True, use_container_width=True, key="editor_fases_v16"
     )
     
     if modo_editor:
