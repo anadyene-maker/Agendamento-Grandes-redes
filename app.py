@@ -10,15 +10,15 @@ from email.mime.multipart import MIMEMultipart
 # Configuração da página
 st.set_page_config(page_title="Controle de Agendamentos Logísticos", layout="wide")
 
-# Mapeamento de e-mails de TESTE 
+# Mapeamento de e-mails dos Operadores (Ajuste para os e-mails reais ou seu e-mail de teste)
 EMAILS_OPERADORES = {
-    "CARRARO ARMAZENS GERAIS LTDA": "torrecontrole@semalo.com.br",
-    "J. LOBO": "seu-email-aqui@dominio.com",
-    "CARRARO": "seu-email-aqui@dominio.com",
-    "J.LOBO": "seu-email-aqui@dominio.com"
+    "CARRARO ARMAZENS GERAIS LTDA": "logistica@carraro.com.br",
+    "J. LOBO": "agendamento@jlobo.com.br",
+    "CARRARO": "logistica@carraro.com.br",
+    "J.LOBO": "agendamento@jlobo.com.br"
 }
 
-# 🎭 CÓDIGO PARA IMPRESSÃO E ESTILIZAÇÃO
+# 🎭 ESTILIZAÇÃO E IMPRESSÃO
 st.markdown("""
     <style>
     div[data-testid="stDataFrame"] input[type="checkbox"]:checked {
@@ -50,7 +50,7 @@ def enviar_email_opl(destinatario, dados_carga):
         remetente = st.secrets["email"]["user"]
         senha = st.secrets["email"]["password"]
         server_smtp = st.secrets["email"]["smtp_server"]
-        porta_smtp = st.secrets["email"]["smtp_port"]
+        porta_smtp = int(st.secrets["email"]["smtp_port"])
         
         msg = MIMEMultipart()
         msg['From'] = remetente
@@ -77,14 +77,18 @@ def enviar_email_opl(destinatario, dados_carga):
         """
         msg.attach(MIMEText(corpo, 'html'))
         
-        server = smtplib.SMTP(server_smtp, porta_smtp)
-        server.starttls()
+        if porta_smtp == 465:
+            server = smtplib.SMTP_SSL(server_smtp, porta_smtp, timeout=10)
+        else:
+            server = smtplib.SMTP(server_smtp, porta_smtp, timeout=10)
+            server.starttls()
+            
         server.login(remetente, senha)
         server.sendmail(remetente, destinatario, msg.as_string())
         server.quit()
         return True
     except Exception as e:
-        st.error(f"Falha ao enviar e-mail para {destinatario}: {e}")
+        st.error(f"❌ Erro ao tentar enviar o e-mail: {e}")
         return False
 
 # Funções GitHub
@@ -112,9 +116,12 @@ df_banco, current_sha = carregar_dados_github()
 st.sidebar.markdown("### 🔑 Controle de Acesso")
 modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
 
-if modo_editor and df_banco is not None and not df_banco.empty:
-    st.subheader("📥 1. Alimentar com Nova Planilha do Sistema")
-    uploaded_file = st.file_uploader("Arraste aqui a planilha (Excel ou CSV)", type=["xlsx", "csv"])
+# 📥 SEÇÃO DE UPLOAD (Habilitada sempre que o Modo Editor estiver ativo)
+if modo_editor:
+    st.markdown("---")
+    st.subheader("📥 1. Alimentar com Nova Planilha do Sistema (Sankhya)")
+    uploaded_file = st.file_uploader("Arraste aqui a planilha do Sankhya (Excel ou CSV)", type=["xlsx", "csv"])
+    
     if uploaded_file:
         try:
             df_raw = pd.read_csv(uploaded_file, header=None) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None)
@@ -126,16 +133,21 @@ if modo_editor and df_banco is not None and not df_banco.empty:
             for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False}.items():
                 if col not in df_novo.columns: df_novo[col] = default
 
-            df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
-            df_novo['Nº Nota'] = df_novo['Nº Nota'].astype(str).str.strip()
-            df_final = pd.concat([df_banco, df_novo[~df_novo['Nº Nota'].isin(df_banco['Nº Nota'])]], ignore_index=True)
+            if df_banco is not None and not df_banco.empty:
+                df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
+                df_novo['Nº Nota'] = df_novo['Nº Nota'].astype(str).str.strip()
+                df_final = pd.concat([df_banco, df_novo[~df_novo['Nº Nota'].isin(df_banco['Nº Nota'])]], ignore_index=True)
+            else:
+                df_final = df_novo
 
             if st.button("💾 Enviar e Atualizar Banco de Dados Compartilhado"):
                 if salvar_dados_github(df_final, current_sha):
-                    st.success("Dados integrados!")
+                    st.success("Dados da planilha do Sankhya integrados com sucesso no GitHub!")
                     st.rerun()
-        except Exception as e: st.error(f"Erro: {e}")
+        except Exception as e: 
+            st.error(f"Erro ao processar planilha: {e}")
 
+# 📊 EXIBIÇÃO E FILTROS
 if df_banco is not None and not df_banco.empty:
     if 'Operador Logístico' not in df_banco.columns:
         df_banco['Operador Logístico'] = df_banco['Logística Ent.'] if 'Logística Ent.' in df_banco.columns else (df_banco['Transportadora'] if 'Transportadora' in df_banco.columns else "Não Informado")
@@ -159,7 +171,6 @@ if df_banco is not None and not df_banco.empty:
     if 'Fase do Agendamento' in df_filtrado.columns:
         df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
 
-    # Visão Gerencial (Gráficos)
     st.markdown("---")
     st.subheader("📊 Resumo Executivo (Visão do Gerente)")
     m1, m2, m3 = st.columns(3)
@@ -167,13 +178,11 @@ if df_banco is not None and not df_banco.empty:
     m2.metric("⚠️ Antecipações Solicitadas", f"{df_filtrado['Antecipado'].sum()} pedidas")
     m3.metric("✅ Agendamentos Confirmados", (df_filtrado['Fase do Agendamento'] == "Confirmado").sum())
     
-    # Painel Operacional
     st.markdown("---")
     st.subheader("📋 2. Painel de Controle Operacional")
     colunas_visiveis = ['Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 'Operador Logístico', 'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota']
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
-    # 🛠️ CORREÇÃO CRÍTICA: Mudamos disabled=True para disabled=not modo_editor na linha do E-mail enviado ao OPL
     edited_df = st.data_editor(
         df_exibir,
         column_config={
@@ -182,10 +191,10 @@ if df_banco is not None and not df_banco.empty:
             "Data Agendamento": st.column_config.TextColumn("Data Agendamento", disabled=not modo_editor),
             "Obs. Logística": st.column_config.TextColumn("Obs. Logística", disabled=not modo_editor),
             "Operador Logístico": st.column_config.TextColumn("Operador Logístico", disabled=True),
-            "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor), # LIBERADO!
+            "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v12"
+        hide_index=True, use_container_width=True, key="editor_fases_v14"
     )
     
     if modo_editor:
@@ -206,7 +215,6 @@ if df_banco is not None and not df_banco.empty:
                         if str(email_ja_enviado).lower() in ['true', '1']: email_ja_enviado = True
                         if str(email_ja_enviado).lower() in ['false', '0']: email_ja_enviado = False
                         
-                        # Se mudou para Confirmado e a caixinha de e-mail ainda está desmarcada na TELA, dispara o e-mail
                         if nova_fase == "Confirmado" and not row['E-mail enviado ao OPL'] and not email_ja_enviado:
                             operador = row['Operador Logístico']
                             destinatario_email = EMAILS_OPERADORES.get(operador)
