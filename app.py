@@ -163,7 +163,6 @@ if modo_editor:
 if df_banco is None or df_banco.empty:
     st.info("ℹ️ O banco de dados no GitHub está vazio ou não foi encontrado.")
 else:
-    # Garante que as colunas customizadas existam
     for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False, 'Obs. Logística': ''}.items():
         if col not in df_banco.columns:
             df_banco[col] = default
@@ -189,15 +188,15 @@ else:
     opcoes_permitidas = ["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"]
     df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
 
+    # Indicadores Diretos no Topo (Sem título)
     st.markdown("---")
-    st.subheader("📊 Resumo Executivo (Visão do Gerente)")
     m1, m2, m3 = st.columns(3)
     m1.metric("📦 Total de Cargas Monitoradas", len(df_filtrado))
     m2.metric("⚠️ Antecipações Solicitadas", f"{df_filtrado['Antecipado'].sum()} pedidas")
     m3.metric("✅ Agendamentos Confirmados", (df_filtrado['Fase do Agendamento'] == "Confirmado").sum())
     
     st.markdown("---")
-    st.subheader("📋 2. Painel de Controle Operacional")
+    st.subheader("📋 Painel de Controle Operacional")
     colunas_visiveis = ['Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 'Operador Logístico', 'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota']
     df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
 
@@ -212,7 +211,7 @@ else:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v18"
+        hide_index=True, use_container_width=True, key="editor_fases_v19"
     )
     
     if modo_editor:
