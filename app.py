@@ -93,7 +93,7 @@ def enviar_email_opl(destinatario, dados_carga):
 
 # Funções GitHub
 def salvar_dados_github(df_salvar, sha=None):
-    csv_string = df_salvar.to_csv(index=False)
+    csv_string = df_salvar.to_csv(index=False, sep=';')
     content_b64 = base64.b64encode(csv_string.encode('utf-8')).decode('utf-8')
     data = {"message": "Atualização via Streamlit", "content": content_b64}
     if sha: data["sha"] = sha
@@ -108,11 +108,18 @@ def carregar_dados_github():
             csv_data = base64.b64decode(content['content']).decode('utf-8', errors='ignore')
             if not csv_data.strip():
                 return pd.DataFrame(), sha
-            df = pd.read_csv(io.StringIO(csv_data))
+            
+            # Tenta ler com separador ; primeiro, depois com vírgula se falhar
+            try:
+                df = pd.read_csv(io.StringIO(csv_data), sep=';')
+                if len(df.columns) <= 1:
+                    df = pd.read_csv(io.StringIO(csv_data), sep=',')
+            except:
+                df = pd.read_csv(io.StringIO(csv_data), sep=',')
+                
             df.columns = df.columns.str.strip()
             return df, sha
         else:
-            st.warning(f"⚠️ Não foi possível ler o arquivo do GitHub (Status Code: {response.status_code}).")
             return pd.DataFrame(), None
     except Exception as e:
         st.error(f"Erro na conexão com GitHub: {e}")
@@ -130,10 +137,10 @@ if modo_editor:
         uploaded_file = st.file_uploader("Arraste a planilha do Sankhya (Excel ou CSV)", type=["xlsx", "csv"])
         if uploaded_file:
             try:
-                df_raw = pd.read_csv(uploaded_file, header=None) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None)
+                df_raw = pd.read_csv(uploaded_file, header=None, sep=None, engine='python') if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None)
                 linha_cabecalho = next((idx for idx, row in df_raw.iterrows() if any("Nº Nota" in str(s) or "Ordem Carga" in str(s) for s in row)), 0)
                 uploaded_file.seek(0)
-                df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, skiprows=linha_cabecalho)
+                df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho, sep=None, engine='python') if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, skiprows=linha_cabecalho)
                 df_novo.columns = df_novo.columns.str.strip()
                 
                 for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False}.items():
@@ -155,7 +162,7 @@ if modo_editor:
 
 # 📊 EXIBIÇÃO E FILTROS
 if df_banco is None or df_banco.empty:
-    st.info("ℹ️ O banco de dados no GitHub está vazio ou não foi encontrado. Se já subiu o arquivo, verifique se o nome no repositório é exatamente `base_dados_agendamentos.csv`.")
+    st.info("ℹ️ O banco de dados no GitHub está vazio ou não foi encontrado.")
 else:
     if 'Operador Logístico' not in df_banco.columns:
         df_banco['Operador Logístico'] = df_banco['Logística Ent.'] if 'Logística Ent.' in df_banco.columns else (df_banco['Transportadora'] if 'Transportadora' in df_banco.columns else "Não Informado")
@@ -202,7 +209,7 @@ else:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v16"
+        hide_index=True, use_container_width=True, key="editor_fases_v17"
     )
     
     if modo_editor:
