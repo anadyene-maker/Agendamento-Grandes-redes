@@ -130,7 +130,7 @@ df_banco, current_sha = carregar_dados_github()
 st.sidebar.markdown("### 🔑 Controle de Acesso")
 modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
 
-# 📥 SEÇÃO DE UPLOAD OPIONAL NO MODO EDITOR
+# 📥 SEÇÃO DE UPLOAD OPCIONAL NO MODO EDITOR
 if modo_editor:
     with st.expander("📥 Deseja mesclar uma nova planilha do Sankhya? (Opcional)"):
         uploaded_file = st.file_uploader("Arraste a planilha do Sankhya (Excel ou CSV)", type=["xlsx", "csv"])
@@ -188,7 +188,7 @@ else:
     opcoes_permitidas = ["Pendente", "Solicitado no Portal", "Confirmado", "Reagenda"]
     df_filtrado['Fase do Agendamento'] = df_filtrado['Fase do Agendamento'].fillna("Pendente").astype(str).str.strip()
 
-    # Indicadores Diretos no Topo (Sem título)
+    # Indicadores
     st.markdown("---")
     m1, m2, m3 = st.columns(3)
     m1.metric("📦 Total de Cargas Monitoradas", len(df_filtrado))
@@ -197,21 +197,40 @@ else:
     
     st.markdown("---")
     st.subheader("📋 Painel de Controle Operacional")
-    colunas_visiveis = ['Fase do Agendamento', 'Antecipado', 'Data Agendamento', 'Obs. Logística', 'Operador Logístico', 'Pedido de Antecipação', 'E-mail enviado ao OPL', 'Ordem Carga', 'Cliente', 'Nº Nota']
-    df_exibir = df_filtrado[[c for c in colunas_visiveis if c in df_filtrado.columns]]
+    
+    # 📌 ORDEM FIXA DAS COLUNAS SOLICITADA
+    ordem_fixa_colunas = [
+        'Nº Nota', 
+        'Cliente', 
+        'Operador Logístico', 
+        'Fase do Agendamento', 
+        'Data Agendamento', 
+        'Obs. Logística', 
+        'Pedido de Antecipação', 
+        'Antecipado', 
+        'E-mail enviado ao OPL', 
+        'Ordem Carga'
+    ]
+    
+    colunas_presentes = [c for c in ordem_fixa_colunas if c in df_filtrado.columns]
+    df_exibir = df_filtrado[colunas_presentes]
 
     edited_df = st.data_editor(
         df_exibir,
+        column_order=colunas_presentes,
         column_config={
+            "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True),
+            "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+            "Operador Logístico": st.column_config.TextColumn("Operador Logístico", disabled=True),
             "Fase do Agendamento": st.column_config.SelectboxColumn("Fase do Agendamento", options=opcoes_permitidas, required=True, disabled=not modo_editor),
-            "Antecipado": st.column_config.CheckboxColumn("Antecipado?", disabled=not modo_editor),
             "Data Agendamento": st.column_config.TextColumn("Data Agendamento", disabled=not modo_editor),
             "Obs. Logística": st.column_config.TextColumn("Obs. Logística", disabled=not modo_editor),
-            "Operador Logístico": st.column_config.TextColumn("Operador Logístico", disabled=True),
+            "Pedido de Antecipação": st.column_config.TextColumn("Pedido de Antecipação", disabled=not modo_editor),
+            "Antecipado": st.column_config.CheckboxColumn("Antecipado?", disabled=not modo_editor),
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
-            "Nº Nota": st.column_config.TextColumn("Nº Nota", disabled=True)
+            "Ordem Carga": st.column_config.TextColumn("Ordem Carga", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v19"
+        hide_index=True, use_container_width=True, key="editor_fases_v20"
     )
     
     if modo_editor:
