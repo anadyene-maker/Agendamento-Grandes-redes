@@ -137,9 +137,18 @@ def carregar_dados_github():
 
 df_banco, current_sha = carregar_dados_github()
 
-# 🔐 CONTROLE DE ACESSO
+# 🔐 CONTROLE DE ACESSO COM SENHA
 st.sidebar.markdown("### 🔑 Controle de Acesso")
-modo_editor = st.sidebar.checkbox("Ativar Modo Editor (Apenas Ana)", value=False)
+senha_input = st.sidebar.text_input("Digite a senha de editor:", type="password")
+
+# 💡 ALTERE A SENHA NA LINHA ABAIXO CASO PREFIRA OUTRA
+SENHA_CORRETA = "1234"
+modo_editor = (senha_input == SENHA_CORRETA)
+
+if modo_editor:
+    st.sidebar.success("🔓 Modo Editor Ativado")
+elif senha_input != "":
+    st.sidebar.error("❌ Senha incorreta")
 
 # 📥 SEÇÃO DE UPLOAD OPCIONAL NO MODO EDITOR
 if modo_editor:
@@ -178,7 +187,6 @@ else:
         if col not in df_banco.columns:
             df_banco[col] = default
 
-    # Limpeza de numéricos para remover o .0
     for col_num in ['Nº Nota', 'Ordem Carga', 'Obs. Logística']:
         if col_num in df_banco.columns:
             df_banco[col_num] = df_banco[col_num].apply(limpar_inteiro)
@@ -214,7 +222,7 @@ else:
     st.markdown("---")
     st.subheader("📋 Painel de Controle Operacional")
     
-    # 📅 FERRAMENTA DE PREENCHIMENTO RÁPIDO DE DATA (MODO EDITOR)
+    # 📅 PREENCHIMENTO RÁPIDO DE DATA (LIBERADO APENAS COM SENHA)
     if modo_editor:
         col_dt1, col_dt2 = st.columns([2, 4])
         with col_dt1:
@@ -262,7 +270,7 @@ else:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Ordem Carga": st.column_config.TextColumn("Ordem Carga", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v21"
+        hide_index=True, use_container_width=True, key="editor_fases_v23"
     )
     
     if modo_editor:
