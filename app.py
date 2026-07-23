@@ -4,6 +4,7 @@ import requests
 import base64
 import io
 import smtplib
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -43,6 +44,16 @@ REPO = "anadyene-maker/Agendamento-Grandes-redes"
 FILE_PATH = "base_dados_agendamentos.csv"
 URL = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
 headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+
+# 🛠️ FUNÇÃO PARA LIMPAR NÚMEROS (TIRAR O .0)
+def limpar_inteiro(valor):
+    if pd.isna(valor) or str(valor).strip() in ['', 'nan', 'None']:
+        return ""
+    try:
+        val_str = str(valor).split('.')[0].strip()
+        return val_str
+    except:
+        return str(valor).strip()
 
 # 📧 FUNÇÃO PARA ENVIAR E-MAIL VIA SMTP
 def enviar_email_opl(destinatario, dados_carga):
@@ -110,11 +121,11 @@ def carregar_dados_github():
                 return pd.DataFrame(), sha
             
             try:
-                df = pd.read_csv(io.StringIO(csv_data), sep=';')
+                df = pd.read_csv(io.StringIO(csv_data), sep=';', dtype=str)
                 if len(df.columns) <= 1:
-                    df = pd.read_csv(io.StringIO(csv_data), sep=',')
+                    df = pd.read_csv(io.StringIO(csv_data), sep=',', dtype=str)
             except:
-                df = pd.read_csv(io.StringIO(csv_data), sep=',')
+                df = pd.read_csv(io.StringIO(csv_data), sep=',', dtype=str)
                 
             df.columns = df.columns.str.strip()
             return df, sha
@@ -136,18 +147,18 @@ if modo_editor:
         uploaded_file = st.file_uploader("Arraste a planilha do Sankhya (Excel ou CSV)", type=["xlsx", "csv"])
         if uploaded_file:
             try:
-                df_raw = pd.read_csv(uploaded_file, header=None, sep=None, engine='python') if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None)
+                df_raw = pd.read_csv(uploaded_file, header=None, sep=None, engine='python', dtype=str) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, header=None, dtype=str)
                 linha_cabecalho = next((idx for idx, row in df_raw.iterrows() if any("Nº Nota" in str(s) or "Ordem Carga" in str(s) for s in row)), 0)
                 uploaded_file.seek(0)
-                df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho, sep=None, engine='python') if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, skiprows=linha_cabecalho)
+                df_novo = pd.read_csv(uploaded_file, skiprows=linha_cabecalho, sep=None, engine='python', dtype=str) if uploaded_file.name.lower().endswith('.csv') else pd.read_excel(uploaded_file, skiprows=linha_cabecalho, dtype=str)
                 df_novo.columns = df_novo.columns.str.strip()
                 
                 for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False}.items():
                     if col not in df_novo.columns: df_novo[col] = default
 
                 if df_banco is not None and not df_banco.empty:
-                    df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
-                    df_novo['Nº Nota'] = df_novo['Nº Nota'].astype(str).str.strip()
+                    df_banco['Nº Nota'] = df_banco['Nº Nota'].apply(limpar_inteiro)
+                    df_novo['Nº Nota'] = df_novo['Nº Nota'].apply(limpar_inteiro)
                     df_final = pd.concat([df_banco, df_novo[~df_novo['Nº Nota'].isin(df_banco['Nº Nota'])]], ignore_index=True)
                 else:
                     df_final = df_novo
@@ -166,6 +177,11 @@ else:
     for col, default in {'Fase do Agendamento': 'Pendente', 'Pedido de Antecipação': '', 'Antecipado': False, 'E-mail enviado ao OPL': False, 'Obs. Logística': ''}.items():
         if col not in df_banco.columns:
             df_banco[col] = default
+
+    # Limpeza de numéricos para remover o .0
+    for col_num in ['Nº Nota', 'Ordem Carga', 'Obs. Logística']:
+        if col_num in df_banco.columns:
+            df_banco[col_num] = df_banco[col_num].apply(limpar_inteiro)
 
     if 'Operador Logístico' not in df_banco.columns:
         df_banco['Operador Logístico'] = df_banco['Logística Ent.'] if 'Logística Ent.' in df_banco.columns else (df_banco['Transportadora'] if 'Transportadora' in df_banco.columns else "Não Informado")
@@ -198,7 +214,23 @@ else:
     st.markdown("---")
     st.subheader("📋 Painel de Controle Operacional")
     
-    # 📌 ORDEM FIXA DAS COLUNAS SOLICITADA
+    # 📅 FERRAMENTA DE PREENCHIMENTO RÁPIDO DE DATA (MODO EDITOR)
+    if modo_editor:
+        col_dt1, col_dt2 = st.columns([2, 4])
+        with col_dt1:
+            data_selecionada = st.date_input("📅 Preencher Data de Agendamento em Massa:", datetime.now())
+        with col_dt2:
+            st.write("")
+            st.write("")
+            if st.button("⚡ Aplicar Data nas Cargas Filtradas"):
+                data_formatada = data_selecionada.strftime("%d/%m")
+                notas_filtradas = df_filtrado['Nº Nota'].tolist()
+                df_banco.loc[df_banco['Nº Nota'].isin(notas_filtradas), 'Data Agendamento'] = data_formatada
+                if salvar_dados_github(df_banco, current_sha):
+                    st.toast(f"Data {data_formatada} aplicada em {len(notas_filtradas)} cargas!", icon="✅")
+                    st.rerun()
+
+    # 📌 ORDEM FIXA DAS COLUNAS
     ordem_fixa_colunas = [
         'Nº Nota', 
         'Cliente', 
@@ -230,14 +262,14 @@ else:
             "E-mail enviado ao OPL": st.column_config.CheckboxColumn("E-mail OPL?", disabled=not modo_editor),
             "Ordem Carga": st.column_config.TextColumn("Ordem Carga", disabled=True)
         },
-        hide_index=True, use_container_width=True, key="editor_fases_v20"
+        hide_index=True, use_container_width=True, key="editor_fases_v21"
     )
     
     if modo_editor:
         if st.button("🚀 Salvar Alterações e Enviar E-mails"):
             with st.spinner("Processando alterações e checando e-mails..."):
-                df_banco['Nº Nota'] = df_banco['Nº Nota'].astype(str).str.strip()
-                edited_df['Nº Nota'] = edited_df['Nº Nota'].astype(str).str.strip()
+                df_banco['Nº Nota'] = df_banco['Nº Nota'].apply(limpar_inteiro)
+                edited_df['Nº Nota'] = edited_df['Nº Nota'].apply(limpar_inteiro)
                 
                 for idx, row in edited_df.iterrows():
                     nota = row['Nº Nota']
