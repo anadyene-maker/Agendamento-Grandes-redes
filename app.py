@@ -142,7 +142,7 @@ st.sidebar.markdown("### 🔑 Controle de Acesso")
 senha_input = st.sidebar.text_input("Digite a senha de editor:", type="password")
 
 # 💡 ALTERE A SENHA NA LINHA ABAIXO CASO PREFIRA OUTRA
-SENHA_CORRETA = "1234"
+SENHA_CORRETA = "160861"
 modo_editor = (senha_input == SENHA_CORRETA)
 
 if modo_editor:
